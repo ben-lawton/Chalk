@@ -1,0 +1,14 @@
+/* STUB (WP0): global styles and design tokens. WP4 owns and replaces this file. */
+:root {
+  --island-bg: #ffffff;
+  --accent: #4f7cff;
+  --text: #1e1e1e;
+  --muted: #6b7280;
+  --z-canvas: 0;
+  --z-editor: 10;
+  --z-island: 20;
+  --z-overlay: 30;
+  --z-dialog: 40;
+}
+html, body, #root { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--text); }
