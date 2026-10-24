@@ -785,3 +785,39 @@ describe('setArrowEndpoint', () => {
     expectPoint(ar.end, 794, 350);
   });
 });
+
+describe('immutability', () => {
+  function deepFreeze<T>(v: T): T {
+    if (v && typeof v === 'object' && !Object.isFrozen(v)) {
+      Object.freeze(v);
+      for (const k of Object.keys(v)) deepFreeze((v as Record<string, unknown>)[k]);
+    }
+    return v;
+  }
+
+  it('no operation mutates frozen input', () => {
+    const { els } = abScene();
+    const label = mkShape('L', 0, 0, 200, 40, { label: 'a b c d e f g h i j k l m n o p' });
+    const text = mkText('T', 0, 500, 'abcdefg');
+    const all = deepFreeze([...els, label, text]) as ChalkElement[];
+    const ids = all.map((e) => e.id);
+    const handles: HandleId[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+    expect(() => {
+      moveElements(all, ids, 3, 4);
+      moveElements(all, ['A'], 3, 4);
+      for (const h of handles) {
+        resizeElements(all, ids, h, { x: 123, y: 456 }, { shift: true, alt: false });
+        resizeElements(all, ['T'], h, { x: -20, y: 456 }, NO);
+        resizeElements(all, ['L'], h, { x: 20, y: 6 }, { shift: false, alt: true });
+      }
+      removeElements(all, ['A']);
+      duplicateElements(all, ids, { x: 1, y: 1 });
+      reorderElements(all, ['A', 'T'], 'front');
+      reorderElements(all, ['A', 'T'], 'backward');
+      applyStyleToElements(all, ids, { strokeWidth: 4, fontSize: 40 });
+      setElementText(all, 'L', 'x\ny\nz');
+      setElementText(all, 'T', 'hello world');
+      setArrowEndpoint(all, 'ar', 'end', { x: 5, y: 5 }, bind('L'));
+    }).not.toThrow();
+  });
+});
