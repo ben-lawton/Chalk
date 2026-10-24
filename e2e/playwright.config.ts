@@ -5,7 +5,7 @@ declare const process: { env: Record<string, string | undefined> };
 export default defineConfig({
   testDir: './tests',
   outputDir: './artifacts/test-results',
-  timeout: 30_000,
+  timeout: 60_000, // headroom for context teardown (trace/video I/O on the bind mount) on a loaded host
   expect: { timeout: 5_000 },
   fullyParallel: false,
   workers: 2,
