@@ -32,7 +32,7 @@ async function boot(): Promise<void> {
     attempt('clearTextCache', clearTextCache);
     attempt('remeasureText', remeasureText);
   });
-  // 2. test hook, 3. React (NO StrictMode), 4. input + persistence
+  // 2. test hook, 3. React (rendered directly, without a dev double-mount wrapper), 4. input + persistence
   attempt('installTestHook', installTestHook);
   createRoot(document.getElementById('root')!).render(<App />);
   attempt('attachKeyboard', attachKeyboard);
