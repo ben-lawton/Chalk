@@ -336,8 +336,6 @@ export function StylePanel() {
               {layerButton(TID.actionForward, 'forward', 'forward', 'Bring forward — Ctrl+]')}
               {layerButton(TID.actionFront, 'front', 'front', 'Bring to front — Ctrl+Shift+]')}
             </div>
-          </Section>
-          <Section label="Actions">
             <div className="layer-row">
               <button type="button" className="icon-btn" data-testid={TID.actionDuplicate} aria-label="Duplicate" title="Duplicate — Ctrl+D"
                 onMouseDown={(e) => e.preventDefault()} onClick={() => duplicateSelection()}>
