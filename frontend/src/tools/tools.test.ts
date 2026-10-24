@@ -1,5 +1,5 @@
 // Unit tests for the tools: synthetic PointerInfo against a reset store with an identity viewport (WP3).
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArrowElement, ChalkElement, PointerInfo, ShapeElement, TextElement, Tool } from '../types';
 import { BIND_GAP, DEFAULT_STYLE } from '../constants';
 import { getState, resetState, setElements, setSelection, setState } from '../state/store';
@@ -411,5 +411,185 @@ describe('text tool', () => {
     click(TOOLS.text, 50, 50);
     expect(getState().editing?.id).toBe('a');
     expect(els()).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pointer router (input/pointer.ts) against a fake canvas in node
+// ---------------------------------------------------------------------------
+describe('pointer router', () => {
+  class FakeCanvas extends EventTarget {
+    style = { cursor: '' };
+    captured = new Set<number>();
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: 800, height: 600 };
+    }
+    setPointerCapture(id: number) { this.captured.add(id); }
+    hasPointerCapture(id: number) { return this.captured.has(id); }
+    releasePointerCapture(id: number) { this.captured.delete(id); }
+  }
+  const win = new EventTarget();
+  let canvas: FakeCanvas;
+  let detach: () => void;
+  let pointer: typeof import('../input/pointer');
+
+  function fire(target: EventTarget, type: string, props: Record<string, unknown> = {}): Event {
+    const e = Object.assign(new Event(type, { cancelable: true }), props);
+    target.dispatchEvent(e);
+    return e;
+  }
+  function ptr(type: string, x: number, y: number, o: Record<string, unknown> = {}): Event {
+    return fire(canvas, type, {
+      clientX: x, clientY: y, pointerId: 1, button: 0, buttons: type === 'pointerup' ? 0 : 1,
+      shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, ...o,
+    });
+  }
+
+  beforeEach(async () => {
+    vi.stubGlobal('window', win);
+    vi.stubGlobal('document', { activeElement: null });
+    vi.stubGlobal('HTMLElement', class {});
+    pointer = await import('../input/pointer');
+    canvas = new FakeCanvas();
+    detach = pointer.attachPointerInput(canvas as unknown as HTMLCanvasElement);
+  });
+  afterEach(() => {
+    detach();
+    vi.unstubAllGlobals();
+  });
+
+  it('routes a drag to the active tool, toggling gestureActive and pointer capture', () => {
+    setState({ tool: 'rectangle' });
+    ptr('pointerdown', 100, 100);
+    expect(getState().interaction.gestureActive).toBe(true);
+    expect(canvas.captured.has(1)).toBe(true);
+    ptr('pointermove', 200, 180);
+    ptr('pointerup', 300, 200);
+    expect(getState().interaction.gestureActive).toBe(false);
+    expect(canvas.captured.size).toBe(0);
+    expect(shapes()).toHaveLength(1);
+    expect([shapes()[0]!.width, shapes()[0]!.height]).toEqual([200, 100]);
+  });
+  it('the lostpointercapture of a normal release does not cancel', () => {
+    setState({ tool: 'rectangle' });
+    ptr('pointerdown', 100, 100);
+    ptr('pointerup', 300, 200);
+    ptr('lostpointercapture', 0, 0);
+    expect(shapes()).toHaveLength(1);
+    expect(getHistorySizes().past).toBe(1);
+  });
+  it('a lost pointerup is recovered by a move with no buttons down', () => {
+    setState({ tool: 'rectangle' });
+    ptr('pointerdown', 100, 100);
+    ptr('pointermove', 150, 150, { buttons: 1 });
+    ptr('pointermove', 300, 200, { buttons: 0 });
+    expect(getState().interaction.gestureActive).toBe(false);
+    expect([shapes()[0]!.width, shapes()[0]!.height]).toEqual([200, 100]);
+  });
+  it('a new pointerdown of the same pointer finishes the stale gesture first', () => {
+    setState({ tool: 'rectangle' });
+    ptr('pointerdown', 100, 100);
+    ptr('pointermove', 200, 200);
+    ptr('pointerdown', 400, 400);
+    expect(shapes()).toHaveLength(1);
+    expect(getState().interaction.gestureActive).toBe(true);
+  });
+  it('ignores other pointers during a gesture', () => {
+    setState({ tool: 'rectangle' });
+    ptr('pointerdown', 100, 100);
+    ptr('pointerdown', 500, 500, { pointerId: 2 });
+    ptr('pointermove', 600, 600, { pointerId: 2 });
+    ptr('pointerup', 600, 600, { pointerId: 2 });
+    expect(getState().interaction.gestureActive).toBe(true);
+    expect(shapes()).toHaveLength(0);
+  });
+  it('cancelGesture restores the pre-gesture scene and ends the gesture', () => {
+    setState({ tool: 'rectangle' });
+    ptr('pointerdown', 100, 100);
+    ptr('pointermove', 200, 200);
+    expect(shapes()).toHaveLength(1);
+    pointer.cancelGesture();
+    expect(shapes()).toHaveLength(0);
+    expect(getState().interaction.gestureActive).toBe(false);
+    expect(canvas.captured.size).toBe(0);
+    ptr('pointerup', 300, 300); // late event: nothing happens
+    expect(shapes()).toHaveLength(0);
+  });
+  it('pointercancel, lostpointercapture mid-gesture and window blur all cancel', () => {
+    setState({ tool: 'rectangle' });
+    for (const how of ['pointercancel', 'lostpointercapture', 'blur'] as const) {
+      ptr('pointerdown', 100, 100);
+      ptr('pointermove', 200, 200);
+      if (how === 'blur') fire(win, 'blur');
+      else ptr(how, 200, 200);
+      expect(shapes()).toHaveLength(0);
+      expect(getState().interaction.gestureActive).toBe(false);
+    }
+  });
+  it('a pointerdown while editing commits the edit and starts no gesture', () => {
+    setState({ tool: 'text' });
+    ptr('pointerdown', 100, 100); // creates a text and starts editing
+    ptr('pointerup', 100, 100);
+    expect(getState().editing).not.toBeNull();
+    ptr('pointerdown', 400, 400);
+    expect(getState().editing).toBeNull();
+    expect(getState().interaction.gestureActive).toBe(false);
+    expect(els()).toHaveLength(0); // empty text removed
+  });
+  it('the hand tool, the middle button and Space+drag all pan', () => {
+    setState({ tool: 'hand' });
+    ptr('pointerdown', 0, 0);
+    ptr('pointermove', 30, 10);
+    expect(canvas.style.cursor).toBe('grabbing');
+    ptr('pointerup', 30, 10);
+    expect(getState().viewport.scrollX).toBe(30);
+    setState({ tool: 'rectangle' });
+    ptr('pointerdown', 0, 0, { button: 1 });
+    ptr('pointermove', 10, 0, { buttons: 4 });
+    ptr('pointerup', 10, 0, { button: 1 });
+    expect(getState().viewport.scrollX).toBe(40);
+    fire(win, 'keydown', { code: 'Space', repeat: false });
+    expect(pointer.isSpaceHeld()).toBe(true);
+    expect(canvas.style.cursor).toBe('grab');
+    ptr('pointerdown', 0, 0);
+    ptr('pointermove', 5, 0);
+    ptr('pointerup', 5, 0);
+    expect(getState().viewport.scrollX).toBe(45);
+    expect(shapes()).toHaveLength(0);
+    fire(win, 'keyup', { code: 'Space' });
+    expect(pointer.isSpaceHeld()).toBe(false);
+  });
+  it('the right button starts nothing', () => {
+    setState({ tool: 'rectangle' });
+    ptr('pointerdown', 100, 100, { button: 2 });
+    expect(getState().interaction.gestureActive).toBe(false);
+  });
+  it('pointermove tracks the last pointer world position and pointerleave clears hover', async () => {
+    const store = await import('../state/store');
+    ptr('pointermove', 12, 34);
+    expect(store.getLastPointerWorld()).toEqual({ x: 12, y: 34 });
+    setState({ interaction: { ...getState().interaction, hoverId: 'x', cursor: 'move' } });
+    fire(canvas, 'pointerleave');
+    expect(getState().interaction.hoverId).toBeNull();
+    expect(getState().interaction.cursor).toBeNull();
+  });
+  it('handleWheel pans, shift-pans horizontally and zooms about the cursor with ctrl', () => {
+    const w = (o: Record<string, unknown>) => ({ preventDefault() {}, deltaX: 0, deltaY: 0, deltaMode: 0, clientX: 0, clientY: 0, ctrlKey: false, metaKey: false, shiftKey: false, ...o }) as unknown as WheelEvent;
+    pointer.handleWheel(w({ deltaY: 40 }));
+    expect(getState().viewport.scrollY).toBe(-40);
+    pointer.handleWheel(w({ deltaY: 25, shiftKey: true }));
+    expect(getState().viewport.scrollX).toBe(-25);
+    setState({ viewport: { scrollX: 0, scrollY: 0, zoom: 1 } });
+    pointer.handleWheel(w({ deltaY: -10, ctrlKey: true, clientX: 200, clientY: 100 }));
+    const v = getState().viewport;
+    expect(v.zoom).toBeCloseTo(Math.exp(0.1));
+    expect(200 / v.zoom - v.scrollX).toBeCloseTo(200); // world point under the cursor is fixed
+  });
+  it('detach is idempotent and removes the listeners', () => {
+    detach();
+    detach();
+    setState({ tool: 'rectangle' });
+    ptr('pointerdown', 100, 100);
+    expect(getState().interaction.gestureActive).toBe(false);
   });
 });
