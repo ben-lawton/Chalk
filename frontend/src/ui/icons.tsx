@@ -56,7 +56,7 @@ export function Icon(props: { name: IconName; size?: number }) {
 /** Shapes use the SHAPES registry icon so a new shape gets a toolbar icon for free. */
 export function ToolIcon(props: { tool: ToolId; size?: number }) {
   const size = props.size ?? 20;
-  if (isShapeKind(props.tool)) return <Svg d={SHAPES[props.tool].icon} size={size} />;
-  const name: IconName = props.tool as Exclude<ToolId, 'rectangle' | 'diamond' | 'ellipse' | 'triangle'>;
-  return <Svg d={PATHS[name]} size={size} />;
+  const tool = props.tool;
+  if (isShapeKind(tool)) return <Svg d={SHAPES[tool].icon} size={size} />;
+  return <Svg d={PATHS[tool]} size={size} />;
 }
