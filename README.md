@@ -140,13 +140,14 @@ Boards are stored in SQLite at `/data/chalk.db` inside the container, on the Doc
 
 - **Back up a board:** Menu, then "Export JSON". The `.chalk.json` file is portable; "Import JSON" puts it on any board in any Chalk. This is the easiest backup and the one to keep before experiments.
 - **Never run `docker compose down -v` in this project:** `-v` deletes the volume and with it every board. Plain `docker compose down` is safe.
-- **Copy the whole database out of the volume** (no install needed):
+- **Copy the whole database out of the volume** (no install needed; the app must be running). The database uses SQLite WAL mode, so take the copy with SQLite's backup call rather than copying the file directly:
 
   ```sh
-  docker compose cp app:/data/chalk.db ./chalk-backup.db
+  docker compose exec app python -c "import sqlite3; s=sqlite3.connect('/data/chalk.db'); d=sqlite3.connect('/tmp/chalk-backup.db'); s.backup(d); d.close()"
+  docker compose cp app:/tmp/chalk-backup.db ./chalk-backup.db
   ```
 
-  (The app must be running.) Backups like this are not committed: `*.db` is git-ignored.
+  Backups like this are not committed: `*.db` is git-ignored.
 - **OneDrive and similar sync folders:** this repository can live in one, but Docker volumes are not part of the folder, so your boards are never synced or touched by it. Keep the folder set to "Always keep on this device" if you use dev mode, because hot reload needs the files to be present locally. Docker creates an empty `frontend/node_modules` folder here; do not let a sync tool fill it.
 
 ## Versions
