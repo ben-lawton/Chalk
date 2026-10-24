@@ -272,7 +272,8 @@ input, textarea { user-select: text; -webkit-user-select: text; }
   top: 70px;
   left: var(--edge);
   width: 220px;
-  max-height: calc(100vh - 160px);
+  /* top offset 70px, minus the zoom controls (44px) + edge gap (12px) + 8px breathing room */
+  max-height: calc(100vh - 134px);
   overflow-y: auto;
   overflow-x: hidden;
   padding: var(--space-1) var(--space-3) var(--space-3);
