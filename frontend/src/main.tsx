@@ -1,4 +1,4 @@
-// STUB (WP0): app boot (fonts, test hook, React root, input, persistence), stubs wrapped in try/catch. WP4 owns and replaces this file.
+// App boot: fonts, test hook, React root, input and persistence; every step is isolated so one failure cannot blank the app. Owner: WP4.
 import '@fontsource/caveat/400.css';
 import './ui/styles.css';
 import { createRoot } from 'react-dom/client';
@@ -12,9 +12,10 @@ import { startAutosave } from './persistence/autosave';
 import { initBoards } from './persistence/boards';
 import { App } from './ui/App';
 
-function attempt(name: string, fn: () => void): void {
+function attempt(name: string, fn: () => unknown): void {
   try {
-    fn();
+    const r = fn();
+    if (r instanceof Promise) r.catch((err: unknown) => console.warn(`boot: ${name} failed`, err));
   } catch (err) {
     console.warn(`boot: ${name} failed`, err);
   }
@@ -28,16 +29,16 @@ async function boot(): Promise<void> {
     // font loading is best effort
   }
   document.fonts?.addEventListener?.('loadingdone', () => {
-    clearTextCache();
+    attempt('clearTextCache', clearTextCache);
     attempt('remeasureText', remeasureText);
   });
   // 2. test hook, 3. React (NO StrictMode), 4. input + persistence
   attempt('installTestHook', installTestHook);
   createRoot(document.getElementById('root')!).render(<App />);
-  attempt('attachKeyboard', () => { attachKeyboard(); });
-  attempt('attachClipboard', () => { attachClipboard(); });
-  attempt('startAutosave', () => { startAutosave(); });
-  initBoards().catch((err: unknown) => console.warn('boot: initBoards failed', err));
+  attempt('attachKeyboard', attachKeyboard);
+  attempt('attachClipboard', attachClipboard);
+  attempt('startAutosave', startAutosave);
+  attempt('initBoards', initBoards);
 }
 
 void boot();
